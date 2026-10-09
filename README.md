@@ -2,7 +2,7 @@
 
 Serviço que recebe uma conexão já autorizada de um criador (Instagram, TikTok, YouTube ou X; o token pode ser fictício) e sincroniza as métricas dos posts a partir de um provedor **simulado**. Sobrevive a timeout, resposta duplicada e 429, e não conta o mesmo post duas vezes quando duas janelas se sobrepõem. Não há OAuth real.
 
-TypeScript, Hono, `node:sqlite`, vitest. Node 22+.
+TypeScript, Hono, `node:sqlite`, vitest. Node 22.13+ (`node:sqlite` sem flag). Só foi verificado no Node 24; o 22.13 vem da documentação do Node, não de execução.
 
 ## Como rodar
 
@@ -44,9 +44,9 @@ Relógio e `sleep` são injetados (`Clock`, `Sleep`); os testes usam um relógio
 - `posts` tem `UNIQUE(connection_id, platform_post_id)` e guarda a métrica **atual**. É upsert, nunca soma.
 - `metric_snapshots` tem `UNIQUE(post_id, observed_at)` e guarda o histórico. Cada snapshot grava `fetched_at` (quando buscamos); o post grava `last_fetched_at`. Repetir uma observação mantém o `fetched_at` da primeira busca.
 - `observed_at` é o instante em que o provedor leu a métrica. Observação **mais nova** que a gravada troca os números atuais; **igual ou mais antiga** só entra no histórico (se ainda não existir) e não mexe nos números.
-- Por isso: payload repetido, página duplicada, retry e janelas sobrepostas caem na mesma linha de `posts` e no mesmo snapshot. O resumo conta `posts_created`, `posts_updated` (observação mais nova) e `posts_unchanged` (já conhecido).
+- Por isso: payload repetido, página duplicada, retry e janelas sobrepostas caem na mesma linha de `posts` e no mesmo snapshot. O resumo conta `posts_created`, `posts_updated` (observação mais nova) e `posts_unchanged` (já conhecido) e `snapshot_conflicts`.
 - Cada página é gravada numa transação. Se a sync falha no meio, o que já foi gravado fica (é idempotente) e rodar de novo completa o resto.
-- Limitação: se o provedor mandar `observed_at` igual com números diferentes, vale a primeira gravação.
+- Conflito: mesmo post e mesmo `observed_at` com números diferentes. Vale a primeira gravação (números não mudam, snapshot não duplica), mas a sync conta `snapshot_conflicts` no resumo e em `sync_runs`, e o payload divergente fica na tabela `snapshot_conflicts` (única por post, `observed_at` e números, então repetir não empilha linhas).
 
 ## Falhas e 429
 
@@ -74,7 +74,7 @@ OAuth real e renovação de token; provedor real; fila/worker; lock por conexão
 
 ## Decisões além do enunciado
 
-- `sync_runs` ganhou `pages_fetched` e `posts_unchanged`; `posts` ganhou `observed_at`.
+- `sync_runs` ganhou `pages_fetched`, `posts_unchanged` e `snapshot_conflicts`; nova tabela `snapshot_conflicts`; `posts` ganhou `observed_at`.
 - Status HTTP 429/502 para `rate_limited`/`failed` (o resumo vem no corpo nos dois casos).
 
 ## Uso de IA

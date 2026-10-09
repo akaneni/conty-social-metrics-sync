@@ -9,3 +9,4 @@
 - [x] T7 `app.ts` + `index.ts` + teste de API. Depende de T6.
 - [x] T8 Teste de fronteira (BOUND-01).
 - [x] T9 README, mutações de verificação, subida real com curl.
+- [x] T10 Conflito de snapshot (IDEM-05), testes de paginação (PAG-01), engines >=22.13.
