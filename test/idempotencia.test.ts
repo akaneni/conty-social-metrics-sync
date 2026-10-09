@@ -80,3 +80,25 @@ describe("idempotência da sincronização", () => {
     expect(p.last_fetched_at).toBe(t.clock.now().toISOString());
   });
 });
+
+describe("conflito de snapshot", () => {
+  it("mesmo observed_at com números diferentes: vale a primeira gravação, conta conflito e guarda o payload divergente", async () => {
+    const provider = new SimulatedProvider(posts);
+    const t = setup(provider);
+    await t.sync(...W);
+    provider.setPosts([post("a", "2026-03-02T10:00:00Z", { views: 999 }), posts[1]!, posts[2]!]);
+    const out = await t.sync(...W);
+    expect(out).toMatchObject({ status: "ok", snapshotConflicts: 1, postsUnchanged: 2, postsUpdated: 0 });
+    const a = t.db.prepare("SELECT views FROM posts WHERE platform_post_id = 'a'").get() as { views: number };
+    expect(a.views).toBe(100);
+    expect(t.count("metric_snapshots")).toBe(3);
+    const c = t.db.prepare("SELECT observed_at, views, payload, fetched_at FROM snapshot_conflicts").all() as Array<{ views: number; payload: string; observed_at: string }>;
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ views: 999, observed_at: "2026-03-10T10:00:00.000Z" });
+    expect(JSON.parse(c[0]!.payload)).toMatchObject({ platformPostId: "a", views: 999 });
+    // repetir a mesma divergência conta de novo no resumo, mas não duplica a auditoria
+    const again = await t.sync(...W);
+    expect(again.snapshotConflicts).toBe(1);
+    expect(t.count("snapshot_conflicts")).toBe(1);
+  });
+});

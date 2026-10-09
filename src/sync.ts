@@ -50,6 +50,7 @@ export interface SyncOutcome {
   postsCreated: number;
   postsUpdated: number;
   postsUnchanged: number;
+  snapshotConflicts: number;
   retryAfterSeconds: number | null;
   error: string | null;
 }
@@ -63,6 +64,7 @@ export async function runSync(deps: SyncDeps, target: SyncTarget): Promise<SyncO
     postsCreated: 0,
     postsUpdated: 0,
     postsUnchanged: 0,
+    snapshotConflicts: 0,
     retryAfterSeconds: null,
     error: null,
   };
@@ -119,6 +121,7 @@ export async function runSync(deps: SyncDeps, target: SyncTarget): Promise<SyncO
     out.postsCreated += saved.created;
     out.postsUpdated += saved.updated;
     out.postsUnchanged += saved.unchanged;
+    out.snapshotConflicts += saved.conflicts;
 
     if (page.nextCursor === null) return out;
     if (seenCursors.has(page.nextCursor)) return fail("failed", "Provedor repetiu o cursor de paginação");

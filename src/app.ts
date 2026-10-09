@@ -76,6 +76,7 @@ export function createApp(deps: AppDeps): Hono {
       posts_created: outcome.postsCreated,
       posts_updated: outcome.postsUpdated,
       posts_unchanged: outcome.postsUnchanged,
+      snapshot_conflicts: outcome.snapshotConflicts,
       retry_after_seconds: outcome.retryAfterSeconds,
       error: outcome.error,
       started_at: startedAt,

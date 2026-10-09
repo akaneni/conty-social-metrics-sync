@@ -35,6 +35,18 @@ export function openDb(path = ":memory:"): DatabaseSync {
       fetched_at TEXT NOT NULL,
       UNIQUE (post_id, observed_at)
     );
+    CREATE TABLE IF NOT EXISTS snapshot_conflicts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL REFERENCES posts(id),
+      observed_at TEXT NOT NULL,
+      views INTEGER NOT NULL,
+      likes INTEGER NOT NULL,
+      comments INTEGER NOT NULL,
+      shares INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      fetched_at TEXT NOT NULL,
+      UNIQUE (post_id, observed_at, views, likes, comments, shares)
+    );
     CREATE TABLE IF NOT EXISTS sync_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       connection_id INTEGER NOT NULL REFERENCES connections(id),
@@ -48,6 +60,7 @@ export function openDb(path = ":memory:"): DatabaseSync {
       posts_created INTEGER NOT NULL,
       posts_updated INTEGER NOT NULL,
       posts_unchanged INTEGER NOT NULL,
+      snapshot_conflicts INTEGER NOT NULL DEFAULT 0,
       retry_after_seconds INTEGER,
       error TEXT
     );
@@ -89,6 +102,8 @@ export interface SaveResult {
   created: number;
   updated: number;
   unchanged: number;
+  /** Mesmo post e mesmo observed_at com números diferentes (vale a primeira gravação). */
+  conflicts: number;
 }
 
 /**
@@ -104,7 +119,7 @@ export function saveObservations(
   posts: ProviderPost[],
   fetchedAt: string,
 ): SaveResult {
-  const result: SaveResult = { created: 0, updated: 0, unchanged: 0 };
+  const result: SaveResult = { created: 0, updated: 0, unchanged: 0, conflicts: 0 };
   const find = db.prepare(
     "SELECT id, observed_at FROM posts WHERE connection_id = ? AND platform_post_id = ?",
   );
@@ -117,6 +132,13 @@ export function saveObservations(
      WHERE id = ?`,
   );
   const touchPost = db.prepare("UPDATE posts SET last_fetched_at = ? WHERE id = ?");
+  const findSnapshot = db.prepare(
+    "SELECT views, likes, comments, shares FROM metric_snapshots WHERE post_id = ? AND observed_at = ?",
+  );
+  const insertConflict = db.prepare(
+    `INSERT OR IGNORE INTO snapshot_conflicts (post_id, observed_at, views, likes, comments, shares, payload, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
   const insertSnapshot = db.prepare(
     `INSERT OR IGNORE INTO metric_snapshots (post_id, observed_at, views, likes, comments, shares, fetched_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -137,6 +159,22 @@ export function saveObservations(
         result.created++;
       } else {
         postId = Number(row.id);
+        const existing = findSnapshot.get(postId, p.observedAt) as
+          | { views: number; likes: number; comments: number; shares: number }
+          | undefined;
+        if (existing) {
+          touchPost.run(fetchedAt, postId);
+          const same =
+            existing.views === p.views && existing.likes === p.likes &&
+            existing.comments === p.comments && existing.shares === p.shares;
+          if (same) {
+            result.unchanged++;
+          } else {
+            insertConflict.run(postId, p.observedAt, p.views, p.likes, p.comments, p.shares, JSON.stringify(p), fetchedAt);
+            result.conflicts++;
+          }
+          continue;
+        }
         if (p.observedAt > row.observed_at) {
           updatePost.run(p.publishedAt, p.views, p.likes, p.comments, p.shares, p.observedAt, fetchedAt, postId);
           result.updated++;
@@ -167,6 +205,7 @@ export interface SyncRunRecord {
   postsCreated: number;
   postsUpdated: number;
   postsUnchanged: number;
+  snapshotConflicts: number;
   retryAfterSeconds: number | null;
   error: string | null;
 }
@@ -175,12 +214,12 @@ export function insertSyncRun(db: DatabaseSync, r: SyncRunRecord): number {
   const res = db
     .prepare(
       `INSERT INTO sync_runs (connection_id, since, until, status, started_at, finished_at, attempts, pages_fetched,
-         posts_created, posts_updated, posts_unchanged, retry_after_seconds, error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         posts_created, posts_updated, posts_unchanged, snapshot_conflicts, retry_after_seconds, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       r.connectionId, r.since, r.until, r.status, r.startedAt, r.finishedAt, r.attempts, r.pagesFetched,
-      r.postsCreated, r.postsUpdated, r.postsUnchanged, r.retryAfterSeconds, r.error,
+      r.postsCreated, r.postsUpdated, r.postsUnchanged, r.snapshotConflicts, r.retryAfterSeconds, r.error,
     );
   return Number(res.lastInsertRowid);
 }
