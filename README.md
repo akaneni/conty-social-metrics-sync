@@ -77,7 +77,11 @@ OAuth real e renovação de token; provedor real; fila/worker; lock por conexão
 - `sync_runs` ganhou `pages_fetched`, `posts_unchanged` e `snapshot_conflicts`; nova tabela `snapshot_conflicts`; `posts` ganhou `observed_at`.
 - Status HTTP 429/502 para `rate_limited`/`failed` (o resumo vem no corpo nos dois casos).
 
+## Banco local
+
+O schema é criado com `CREATE TABLE IF NOT EXISTS` e **não há migração**. O padrão é `:memory:`; se você usar `DB_PATH` com um arquivo SQLite criado por uma versão anterior (antes da tabela `snapshot_conflicts` e da coluna `sync_runs.snapshot_conflicts`), apague o arquivo: senão o `INSERT` do sync_run falha com "no column".
+
 ## Uso de IA
 - **Feito com IA:** especificação, código e testes escritos com Claude Code (Claude Sonnet 5.5), a partir de decisões do autor tomadas em entrevista (grill) e registradas em `.specs/`.
-- **Revisado pelo autor:** TODO(preencher após a revisão humana do diff).
-- **Revisão independente:** TODO(preencher após a revisão por agente de contexto limpo).
+- **Revisado pelo autor:** as decisões de regra foram tomadas pelo autor em entrevista (grill) e revisadas por ele. O autor **não leu o código linha a linha**; leu os relatórios de revisão e os pontos de risco apontados.
+- **Revisão independente:** 2 revisões independentes por agente de IA de contexto limpo, em modo somente leitura, que rodou os testes, seguiu o README do zero, tentou quebrar as regras com casos adversariais e fez mutações. Os achados foram corrigidos; os ajustes posteriores à segunda revisão (aviso de banco antigo e branch) não foram reavaliados por revisor, só pelos testes.
