@@ -11,7 +11,6 @@ describe("API", () => {
     const created = await t.app.request("/connections", body({ creator_id: "cr_9", platform: "tiktok", access_token: "t" }));
     expect(created.status).toBe(201);
     const { id } = (await created.json()) as { id: number };
-    // o provedor simulado ignora o token e a plataforma; usamos a conexão criada em setup para a sync
     const win = { since: "2026-03-01T00:00:00Z", until: "2026-03-31T00:00:00Z" };
     const r1 = await t.app.request(`/connections/${id}/sync`, body(win));
     expect(r1.status).toBe(200);
